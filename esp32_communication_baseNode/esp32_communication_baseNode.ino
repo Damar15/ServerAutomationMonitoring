@@ -73,11 +73,13 @@ uint8_t temp;
 uint8_t sinkNode1[] = { 0x40, 0x22, 0xD8, 0x3E, 0x99, 0x7C };
 uint8_t sinkNode2[] = { 0x40, 0x22, 0xD8, 0x3C, 0x60, 0x54 };
 struct Message {
-  uint8_t signalCode1;
-  uint8_t signalCode2;
+  uint8_t signalCode1Temp;
+  uint8_t signalCode1Humd;
+  uint8_t signalCode2Temp;
+  uint8_t signalCode2Humd;
   bool AC_Condition;
   uint8_t roomTemp;
-} msg{ 0, 0, false };
+} msg{ 0, 0, 0, 0, false };
 
 esp_now_peer_info_t peerInfo;
 
@@ -108,7 +110,7 @@ void loop() {
   delay(1000);
   if ((millis() - lastTime) > timerDelay) {
     msg.AC_Condition = conditionAC();  // Recheck AC condition
-    recheckConnection(); // connect or reconnect to WiFi
+    recheckConnection();               // connect or reconnect to WiFi
 
     humidity = dht.readHumidity();
     temp = dht.readTemperature();
@@ -131,13 +133,17 @@ void loop() {
     }
 
     // sending data
-    msg.roomTemp = temp;
+    msg.roomTemp = 25;
     if (msg.AC_Condition == true) {
-      msg.signalCode1 = onSendCommand(msg.roomTemp, 39.00);
-      msg.signalCode2 = offSendCommand();
+      msg.signalCode1Temp = changeTempCommand(msg.roomTemp);
+      msg.signalCode1Humd = changeModeCommand(61.00);
+      msg.signalCode2Temp = offSendCommand();
+      msg.signalCode2Humd = offSendCommand();
     } else {
-      msg.signalCode1 = offSendCommand();
-      msg.signalCode2 = onSendCommand(msg.roomTemp, humidity);
+      msg.signalCode1Temp = offSendCommand();
+      msg.signalCode1Humd = offSendCommand();
+      msg.signalCode2Temp = changeTempCommand(msg.roomTemp);
+      msg.signalCode2Humd = changeModeCommand(39.00);
     }
 
     switchingToESPNOW();
@@ -192,8 +198,8 @@ void systemInit() {
   timeClient.begin();  // Init NTPClient
   timeClient.setTimeOffset(gmtOffset_sec);
   oledDisplay();
-  ThingSpeak.begin(client);          // Initialize ThingSpeak
-  dht.begin();                       // Initialize dht22 sensor
+  ThingSpeak.begin(client);  // Initialize ThingSpeak
+  dht.begin();               // Initialize dht22 sensor
 }
 
 void switchingToESPNOW() {
@@ -240,23 +246,28 @@ uint8_t offSendCommand() {
   return 0;
 }
 
-uint8_t onSendCommand(uint8_t temp, float hum) {
+uint8_t changeModeCommand(float hum) {
+  if (hum >= 40.00 && hum < 60.00) {
+    // continue nothing happen
+    Serial.println("Server Room is good!");
+    return 0;
+  } else if (hum < 40.00) {
+    // change mode to cool
+    Serial.println("Changing mode to cool");
+    return 3;
+  } else {
+    // change mode to dry
+    Serial.println("Changing mode to dry");
+    return 4;
+  }
+}
+
+uint8_t changeTempCommand(uint8_t temp) {
   noTone(BUZZPIN);
   delay(1000);
   if (temp >= 18 && temp < 25) {
-    if (hum >= 40.00 && hum < 60.00) {
-      // continue nothing happen
-      Serial.println("Server Room is good!");
-      return 0;
-    } else if (hum < 40.00) {
-      // change mode to cool
-      Serial.println("Changing mode to cool");
-      return 3;
-    } else {
-      // change mode to dry
-      Serial.println("Changing mode to dry");
-      return 4;
-    }
+    Serial.println("Server temp is good!");
+    return 0;
   } else if (temp < 18) {
     // higher up the temp
     Serial.println("Raising the temp");
