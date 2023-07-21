@@ -50,13 +50,17 @@ const unsigned char *epd_bitmap_allArray[2] = {
   coolMode, dryMode
 };
 
+String sinkNode1 = "40:22:D8:3E:99:7C";
+String sinkNode2 = "40:22:D8:3C:60:54";
 
 struct Message {
-  uint8_t signalCode1;
-  uint8_t signalCode2;
+  uint8_t signalCode1Temp;
+  uint8_t signalCode1Humd;
+  uint8_t signalCode2Temp;
+  uint8_t signalCode2Humd;
   bool AC_Condition;
   uint8_t roomTemp;
-} msg{ 0, 0, false, 22 };
+} msg{ 0, 0, 0, 0, false, 22 };
 
 enum signalStatus {
   roomOK = 0,
@@ -67,12 +71,9 @@ enum signalStatus {
   roomDanger = 5,
 };
 
-String sinkNode1 = "40:22:D8:3E:99:7C";
-String sinkNode2 = "40:22:D8:3C:60:54";
-
 int sendTemp;
 const uint16_t IR_LED_PIN = 4;
-uint8_t currentTemp = 20;
+uint8_t currentTemp = msg.roomTemp;
 // 1 cool, 4 dry
 uint8_t currentMode = kDaikin64Cool;
 bool dataReceived;
@@ -82,7 +83,7 @@ IRDaikin64 ac(IR_LED_PIN);
 
 void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len);
 void whatSink(bool AC_Condition);
-void onRecvCommandSink(uint8_t decodeSignal);
+void onRecvCommandSink(uint8_t decodeSignalTemp, uint8_t decodeSignalHumd);
 void changeDisplayMode(uint8_t currentMode);
 void changeDisplayTemp(uint8_t currentTemp);
 void updateDisplay(uint16_t currentTemp, uint8_t currentMode);
@@ -132,7 +133,7 @@ void whatSink(bool AC_Condition) {
   if (AC_Condition == true && WiFi.macAddress() == sinkNode1) {  // Mengatur AC pada sink node 1
     if (ac.getPowerToggle() == true) {
       ac.setPowerToggle(false);
-      onRecvCommandSink(msg.signalCode1);
+      onRecvCommandSink(msg.signalCode1Temp, msg.signalCode1Humd);
       Serial.println("Mengontrol AC 1");
       ac.setPowerToggle(true);
     } else {
@@ -140,7 +141,7 @@ void whatSink(bool AC_Condition) {
       ac.send();
       Serial.println("Menyalakan AC 1");
       ac.setPowerToggle(false);
-      onRecvCommandSink(msg.signalCode1);
+      onRecvCommandSink(msg.signalCode1Temp, msg.signalCode1Humd);
       Serial.println("Mengontrol AC 1");
       ac.setPowerToggle(true);
     }
@@ -152,7 +153,7 @@ void whatSink(bool AC_Condition) {
   if (AC_Condition == false && WiFi.macAddress() == sinkNode2) {  // Mengatur AC pada sink node 2
     if (ac.getPowerToggle() == true) {
       ac.setPowerToggle(false);
-      onRecvCommandSink(msg.signalCode2);
+      onRecvCommandSink(msg.signalCode2Temp, msg.signalCode2Humd);
       Serial.println("Mengontrol AC 2");
       ac.setPowerToggle(true);
     } else {
@@ -160,7 +161,7 @@ void whatSink(bool AC_Condition) {
       ac.send();
       Serial.println("Menyalakan AC 2");
       ac.setPowerToggle(false);
-      onRecvCommandSink(msg.signalCode2);
+      onRecvCommandSink(msg.signalCode2Temp, msg.signalCode2Humd);
       Serial.println("Mengontrol AC 2");
     }
     updateDisplay(currentTemp, currentMode);
@@ -168,8 +169,8 @@ void whatSink(bool AC_Condition) {
     Serial.println(ac.toString());
     Serial.println("==========================================");
   }
-  if ( !(AC_Condition == false && WiFi.macAddress() == sinkNode2) && !(AC_Condition == true && WiFi.macAddress() == sinkNode1) ) {
-    if(AC_Condition == false) {
+  if (!(AC_Condition == false && WiFi.macAddress() == sinkNode2) && !(AC_Condition == true && WiFi.macAddress() == sinkNode1)) {
+    if (AC_Condition == false) {
       Serial.println("==========================================================");
       Serial.println("AC 1 Mati");
     } else {
@@ -179,11 +180,11 @@ void whatSink(bool AC_Condition) {
   }
 }
 
-void onRecvCommandSink(uint8_t decodeSignal) {
+void onRecvCommandSink(uint8_t decodeSignalTemp, uint8_t decodeSignalHumd) {
   currentTemp = currentTemp;
   currentMode = currentMode;
   updateDisplay(currentTemp, currentMode);
-  switch (decodeSignal) {
+  switch (decodeSignalTemp) {
     case roomOK:
       {
         // continue the conditions
@@ -196,7 +197,7 @@ void onRecvCommandSink(uint8_t decodeSignal) {
 
         if (msg.roomTemp > currentTemp) {
           sendTemp = msg.roomTemp - currentTemp;
-          if (sendTemp != 0 && !(round(sendTemp > 5))) {
+          if (sendTemp != 0 && !(round(sendTemp > 7))) {
             sendTemp = currentTemp - sendTemp;
             ac.setTemp(sendTemp);
             Serial.println("Lowering AC temp");
@@ -206,7 +207,7 @@ void onRecvCommandSink(uint8_t decodeSignal) {
           }
         } else {
           sendTemp = currentTemp - msg.roomTemp;
-          if (sendTemp != 0 && !(round(sendTemp > 5))) {
+          if (sendTemp != 0 && !(round(sendTemp > 7))) {
             sendTemp = currentTemp + abs(sendTemp);
             ac.setTemp(sendTemp);
             Serial.println("Raising AC temp");
@@ -218,6 +219,19 @@ void onRecvCommandSink(uint8_t decodeSignal) {
         currentTemp = sendTemp;
         ac.send();
         Serial.println(ac.toString());
+        break;
+      }
+    default:
+      // Send command to call security with WA/telegram API
+      Serial.println("Server room in danger!");
+      break;
+  }
+
+  switch (decodeSignalHumd) {
+    case roomOK:
+      {
+        // continue the conditions
+        Serial.println("Room humd is good!");
         break;
       }
     case modeCool:
@@ -241,9 +255,11 @@ void onRecvCommandSink(uint8_t decodeSignal) {
         break;
       }
     default:
-      // Send command to call security with WA/telegram API
-      Serial.println("Server room in danger!");
-      break;
+      {
+        // Send command to call security with WA/telegram API
+        Serial.println("Server room in danger!");
+        break;
+      }
   }
   currentTemp = ac.getTemp();
   currentMode = ac.getMode();
@@ -285,9 +301,11 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
   Serial.print("Bytes received: ");
   Serial.println(len);
   Serial.print("signalCode1: ");
-  Serial.println(msg.signalCode1);
+  Serial.println(msg.signalCode1Temp);
+  Serial.println(msg.signalCode1Humd);
   Serial.print("signalCode2: ");
-  Serial.println(msg.signalCode2);
+  Serial.println(msg.signalCode2Temp);
+  Serial.println(msg.signalCode2Humd);
   Serial.print("AC_Condition: ");
   Serial.println(msg.AC_Condition);
   Serial.println();
