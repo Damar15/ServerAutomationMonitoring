@@ -7,6 +7,9 @@
 #include <Adafruit_SSD1306.h>
 #include <IRremoteESP8266.h>
 #include <ir_Daikin.h>
+#include <IRutils.h>
+#include <IRac.h>
+
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
@@ -16,15 +19,16 @@
 #define OLED_CS 5
 #define OLED_RESET 17
 
-// // 'weather', 24x24px
-// const unsigned char ACMode_icon [] PROGMEM = {
-// 	0x00, 0x18, 0x00, 0x01, 0x1c, 0x00, 0x01, 0x9c, 0x00, 0x00, 0x98, 0x40, 0x08, 0x18, 0x70, 0x04,
-// 	0x78, 0x70, 0x00, 0xf8, 0x78, 0x61, 0x98, 0x80, 0x33, 0x19, 0x00, 0x06, 0x1a, 0x00, 0x06, 0x1c,
-// 	0x06, 0xe4, 0x1f, 0xff, 0xe4, 0x1f, 0xff, 0x06, 0x1c, 0x06, 0x06, 0x1a, 0x00, 0x33, 0x19, 0x00,
-// 	0x61, 0x98, 0x80, 0x00, 0xf8, 0x78, 0x04, 0x78, 0x70, 0x08, 0x18, 0x70, 0x00, 0x98, 0x40, 0x01,
-// 	0x9c, 0x00, 0x01, 0x1c, 0x00, 0x00, 0x18, 0x00
-// };
+#if DECODE_AC
+// Some A/C units have gaps in their protocols of ~40ms. e.g. Kelvinator
+// A value this large may swallow repeats of some protocols
+const uint8_t kTimeout = 50;
+#else   // DECODE_AC
+// Suits most messages, while not swallowing many repeats.
+const uint8_t kTimeout = 15;
+#endif  // DECODE_AC
 
+const uint16_t kCaptureBufferSize = 1024;
 
 // 'cool (1)', 24x24px
 const unsigned char coolMode[] PROGMEM = {
@@ -72,14 +76,18 @@ enum signalStatus {
 };
 
 int sendTemp;
+const uint8_t IR_RECV_PIN = 15;  //decode
 const uint16_t IR_LED_PIN = 4;
 uint8_t currentTemp = msg.roomTemp;
 // 1 cool, 4 dry
-uint8_t currentMode = kDaikin64Cool;
+uint8_t currentMode = kDaikin64Dry;
+bool togglePower = true;
 bool dataReceived;
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, OLED_MOSI, OLED_CLK, OLED_DC, OLED_RESET, OLED_CS);
 IRDaikin64 ac(IR_LED_PIN);
+IRrecv remote(IR_RECV_PIN, kCaptureBufferSize, kTimeout, true);
+decode_results result;
 
 void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len);
 void whatSink(bool AC_Condition);
@@ -109,20 +117,91 @@ void setup() {
     Serial.println("Error initializing ESP-NOW");
     return;
   }
-  ac.setPowerToggle(false);
+  ac.setPowerToggle(togglePower);
+  remote.enableIRIn();  //receiving IR
 
   // Once ESPNow is successfully Init, we will register for recv CB to
   // get recv packer info
   esp_now_register_recv_cb(OnDataRecv);
   ac.begin();
-  Serial.println("Suhu Awal: ");
-  Serial.println(currentTemp);
+  Serial.println("======= Informasi awal remote AC ======= ");
+  Serial.print("Power button: ");
+  Serial.println(togglePower == 1 ? "ON" : "OFF");
+  Serial.print("AC Temperature: ");
+  Serial.print(currentTemp);
+  Serial.println((char)247);
+  Serial.print("AC Mode: ");
+  Serial.println(currentMode == 2 ? "Cool" : "Dry");
 }
 
 void loop() {
-  if (dataReceived == true) {
+  // check if there is interference from remote AC by user
+  inRemote();
+
+  if (dataReceived == true) {  //run command whenever received information from base node
     whatSink(msg.AC_Condition);
     dataReceived = false;
+  }
+}
+
+void inRemote() {
+  if (remote.decode(&result)) {
+    Serial.println(result.value, HEX);
+    delay(1000);
+
+    String outCode = resultToHumanReadableBasic(&result);
+    Serial.println(outCode.substring(12, 20));
+
+    if (outCode.substring(12, 20) == "DAIKIN64") {
+      IRDaikin64 acCommand(result.value);
+      String temporary = IRAcUtils::resultAcToString(&result);
+      String compare = temporary.substring(14, 16);
+      Serial.print("Ini nilai compare awal: ");
+      Serial.println(compare);
+      if (compare == "On") {
+        togglePower = !togglePower;
+      } else {
+        // UpdateMode
+        compare = temporary.substring(25, 26);
+        Serial.print("Ini nilai compare awal: ");
+        Serial.println(compare);
+        if (compare.toInt() == 2) {
+          currentMode = kDaikin64Cool;
+        } else if (compare.toInt() == 1) {
+          currentMode = kDaikin64Dry;
+        } else {
+          currentMode = currentMode;
+        }
+
+        // UpdateTemp
+        if (currentMode == kDaikin64Cool) {
+          compare = temporary.substring(40, 43);
+          Serial.println("Ini mode cool");
+        } else if (currentMode == kDaikin64Dry) {
+          compare = temporary.substring(40, 42);
+          Serial.println("Ini mode dry");
+        }
+        if (compare != String(currentTemp)) {
+          currentTemp = compare.toInt();
+          Serial.print("Ini nilai compare awal: ");
+          Serial.println(compare);
+          Serial.print("Ini nilai konversi compare: ");
+          Serial.println(compare.toInt());
+          Serial.println("Masuk kondisi sini");
+        } else {
+          currentTemp = currentTemp;
+        }
+      }
+    }
+    Serial.println("======= Informasi perubahan dari remote AC ======= ");
+    Serial.print("Power button: ");
+    Serial.println(togglePower == 1 ? "ON" : "OFF");
+    Serial.print("AC Temperature: ");
+    Serial.print(currentTemp);
+    Serial.println((char)247);
+    Serial.print("AC Mode: ");
+    Serial.println(currentMode == 2 ? "Cool" : "Dry");
+    remote.resume();
   }
 }
 
