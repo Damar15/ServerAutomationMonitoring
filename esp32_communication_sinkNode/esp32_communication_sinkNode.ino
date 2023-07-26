@@ -83,6 +83,8 @@ uint8_t currentTemp = msg.roomTemp;
 uint8_t currentMode = kDaikin64Dry;
 bool togglePower = true;
 bool dataReceived;
+String temporary;
+String compare;
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, OLED_MOSI, OLED_CLK, OLED_DC, OLED_RESET, OLED_CS);
 IRDaikin64 ac(IR_LED_PIN);
@@ -135,62 +137,79 @@ void setup() {
 }
 
 void loop() {
-  // check if there is interference from remote AC by user
-  inRemote();
-
   if (dataReceived == true) {  //run command whenever received information from base node
     whatSink(msg.AC_Condition);
     dataReceived = false;
+  } else {
+    inRemote();  // check if there is interference from remote AC by user
+  }
+}
+
+void inRemoteMode() {
+  if (compare == "On") {
+    compare = temporary.substring(24, 25);
+    // Serial.print("Ini nilai compare awal mode: ");
+    // Serial.println(compare);
+  } else {
+    compare = temporary.substring(25, 26);
+    // Serial.print("Ini nilai compare awal mode: ");
+    // Serial.println(compare);
+  }
+  if (compare.toInt() == 2) {
+    currentMode = kDaikin64Cool;
+  } else if (compare.toInt() == 1) {
+    currentMode = kDaikin64Dry;
+  } else {
+    currentMode = currentMode;
+  }
+}
+
+void inRemoteTemp() {
+  if (currentMode == kDaikin64Cool) {
+    compare = temporary.substring(40, 43);
+    // Serial.println("Ini mode cool");
+  } else if (currentMode == kDaikin64Dry) {
+    compare = temporary.substring(39, 42);
+    // Serial.println("Ini mode dry");
+  }
+
+
+  if (compare != String(currentTemp)) {
+    currentTemp = compare.toInt();
+    // Serial.print("Ini nilai compare awal Temp: ");
+    // Serial.println(compare);
+    // Serial.print("Ini nilai konversi compare: ");
+    // Serial.println(compare.toInt());
+    // Serial.println("Masuk kondisi sini");
+  } else {
+    currentTemp = currentTemp;
   }
 }
 
 void inRemote() {
   if (remote.decode(&result)) {
-    Serial.println(result.value, HEX);
+    // Serial.println(result.value, HEX);
     delay(1000);
 
     String outCode = resultToHumanReadableBasic(&result);
-    Serial.println(outCode.substring(12, 20));
+    // Serial.println(outCode.substring(12, 20));
 
     if (outCode.substring(12, 20) == "DAIKIN64") {
       IRDaikin64 acCommand(result.value);
-      String temporary = IRAcUtils::resultAcToString(&result);
-      String compare = temporary.substring(14, 16);
-      Serial.print("Ini nilai compare awal: ");
-      Serial.println(compare);
+      temporary = IRAcUtils::resultAcToString(&result);
+      // *** Debug for knowing on / off AC ***
+      compare = temporary.substring(14, 16);
+      // Serial.print("Ini nilai compare awal toggle: ");
+      // Serial.println(compare);
       if (compare == "On") {
         togglePower = !togglePower;
-      } else {
-        // UpdateMode
-        compare = temporary.substring(25, 26);
-        Serial.print("Ini nilai compare awal: ");
-        Serial.println(compare);
-        if (compare.toInt() == 2) {
-          currentMode = kDaikin64Cool;
-        } else if (compare.toInt() == 1) {
-          currentMode = kDaikin64Dry;
-        } else {
-          currentMode = currentMode;
-        }
-
-        // UpdateTemp
-        if (currentMode == kDaikin64Cool) {
-          compare = temporary.substring(40, 43);
-          Serial.println("Ini mode cool");
-        } else if (currentMode == kDaikin64Dry) {
-          compare = temporary.substring(40, 42);
-          Serial.println("Ini mode dry");
-        }
-        if (compare != String(currentTemp)) {
-          currentTemp = compare.toInt();
-          Serial.print("Ini nilai compare awal: ");
-          Serial.println(compare);
-          Serial.print("Ini nilai konversi compare: ");
-          Serial.println(compare.toInt());
-          Serial.println("Masuk kondisi sini");
-        } else {
-          currentTemp = currentTemp;
-        }
+        display.clearDisplay();  // OLED not showing info
+        display.display();
+      }
+      if (togglePower == 1) {
+        inRemoteMode();  // UpdateMode
+        inRemoteTemp();  // UpdateTemp
+        updateDisplay(currentTemp, currentMode);
       }
     }
     Serial.println("======= Informasi perubahan dari remote AC ======= ");
@@ -252,9 +271,14 @@ void whatSink(bool AC_Condition) {
     if (AC_Condition == false) {
       Serial.println("==========================================================");
       Serial.println("AC 1 Mati");
+      display.clearDisplay();  // OLED not showing info
+      display.display();
+
     } else {
       Serial.println("==========================================================");
       Serial.println("AC 2 Mati");
+      display.clearDisplay();  // OLED not showing info
+      display.display();
     }
   }
 }
