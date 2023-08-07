@@ -11,6 +11,9 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
+#define BLYNK_TEMPLATE_ID "TMPL6yl7XoKK2"
+#define BLYNK_TEMPLATE_NAME "AC Controller"
+
 #define DHT_TYPE DHT22
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
@@ -108,6 +111,9 @@ void setup() {
 
 void loop() {
   delay(1000);
+
+  Blynk.run();
+  
   if ((millis() - lastTime) > timerDelay) {
     msg.AC_Condition = conditionAC();  // Recheck AC condition
     recheckConnection();               // connect or reconnect to WiFi
@@ -133,17 +139,25 @@ void loop() {
     }
 
     // sending data
-    msg.roomTemp = 25;
+    msg.roomTemp = temp;
     if (msg.AC_Condition == true) {
       msg.signalCode1Temp = changeTempCommand(msg.roomTemp);
-      msg.signalCode1Humd = changeModeCommand(61.00);
+      msg.signalCode1Humd = changeModeCommand(humidity);
+      // msg.signalCode1Temp = changeTempCommand(28);
+      // msg.signalCode1Humd = changeModeCommand(39.00);
+      // msg.signalCode1Temp = changeTempCommand(17);
+      // msg.signalCode1Humd = changeModeCommand(61.00);
       msg.signalCode2Temp = offSendCommand();
       msg.signalCode2Humd = offSendCommand();
     } else {
       msg.signalCode1Temp = offSendCommand();
       msg.signalCode1Humd = offSendCommand();
       msg.signalCode2Temp = changeTempCommand(msg.roomTemp);
-      msg.signalCode2Humd = changeModeCommand(39.00);
+      msg.signalCode2Humd = changeModeCommand(humidity);
+      // msg.signalCode2Temp = changeTempCommand(17);
+      // msg.signalCode2Humd = changeModeCommand(61.00);
+      // msg.signalCode2Temp = changeTempCommand(28);
+      // msg.signalCode2Humd = changeModeCommand(39.00);
     }
 
     switchingToESPNOW();
@@ -159,11 +173,15 @@ void loop() {
   }
 }
 
+BLYNK_WRITE (V0) {
+  
+}
+
 void systemInit() {
   int status = WL_IDLE_STATUS;
   Serial.begin(115200);
   WiFi.mode(WIFI_STA);
-
+  gpio_set_level(GPIO_NUM_0, 0);
 
   if (!display.begin(SSD1306_SWITCHCAPVCC)) {
     Serial.println(F("SSD1306 allocation failed"));
@@ -279,10 +297,9 @@ uint8_t changeTempCommand(uint8_t temp) {
   } else {
     // Nyalakan buzzer
     Serial.println("Server room in danger!");
-    tone(BUZZPIN, 500);
+    tone(BUZZPIN, 10, 2000);
     delay(1000);
-    noTone(BUZZPIN);
-    tone(BUZZPIN, 500);
+    tone(BUZZPIN, 50, 2000);
     delay(1000);
     noTone(BUZZPIN);
     return 5;
