@@ -22,10 +22,10 @@
 #if DECODE_AC
 // Some A/C units have gaps in their protocols of ~40ms. e.g. Kelvinator
 // A value this large may swallow repeats of some protocols
-const uint8_t kTimeout = 50;
+const uint8_t kTimeout = 40;
 #else   // DECODE_AC
 // Suits most messages, while not swallowing many repeats.
-const uint8_t kTimeout = 15;
+const uint8_t kTimeout = 10;
 #endif  // DECODE_AC
 
 const uint16_t kCaptureBufferSize = 1024;
@@ -64,7 +64,7 @@ struct Message {
   uint8_t signalCode2Humd;
   bool AC_Condition;
   uint8_t roomTemp;
-} msg{ 0, 0, 0, 0, false, 22 };
+} msg{ 0, 0, 0, 0, false, 19 };
 
 enum signalStatus {
   roomOK = 0,
@@ -167,20 +167,20 @@ void inRemoteMode() {
 void inRemoteTemp() {
   if (currentMode == kDaikin64Cool) {
     compare = temporary.substring(40, 43);
-    // Serial.println("Ini mode cool");
+    Serial.println("Ini mode cool");
   } else if (currentMode == kDaikin64Dry) {
     compare = temporary.substring(39, 42);
-    // Serial.println("Ini mode dry");
+    Serial.println("Ini mode dry");
   }
 
 
   if (compare != String(currentTemp)) {
     currentTemp = compare.toInt();
-    // Serial.print("Ini nilai compare awal Temp: ");
-    // Serial.println(compare);
-    // Serial.print("Ini nilai konversi compare: ");
-    // Serial.println(compare.toInt());
-    // Serial.println("Masuk kondisi sini");
+    Serial.print("Ini nilai compare awal Temp: ");
+    Serial.println(compare);
+    Serial.print("Ini nilai konversi compare: ");
+    Serial.println(compare.toInt());
+    Serial.println("Masuk kondisi sini");
   } else {
     currentTemp = currentTemp;
   }
@@ -192,15 +192,15 @@ void inRemote() {
     delay(1000);
 
     String outCode = resultToHumanReadableBasic(&result);
-    // Serial.println(outCode.substring(12, 20));
+    Serial.println(outCode.substring(12, 20));
 
     if (outCode.substring(12, 20) == "DAIKIN64") {
       IRDaikin64 acCommand(result.value);
       temporary = IRAcUtils::resultAcToString(&result);
       // *** Debug for knowing on / off AC ***
       compare = temporary.substring(14, 16);
-      // Serial.print("Ini nilai compare awal toggle: ");
-      // Serial.println(compare);
+      Serial.print("Ini nilai compare awal toggle: ");
+      Serial.println(compare);
       if (compare == "On") {
         togglePower = !togglePower;
         display.clearDisplay();  // OLED not showing info
@@ -327,6 +327,12 @@ void onRecvCommandSink(uint8_t decodeSignalTemp, uint8_t decodeSignalHumd) {
     default:
       // Send command to call security with WA/telegram API
       Serial.println("Server room in danger!");
+      currentTemp = 20;
+      ac.setTemp(currentTemp);
+      ac.send();
+      changeDisplayTemp(currentTemp);
+      Serial.println("Ac temp set to default: 20°C");
+      // Serial.println(ac.toString());
       break;
   }
 
