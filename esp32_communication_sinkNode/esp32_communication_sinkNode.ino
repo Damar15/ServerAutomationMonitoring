@@ -9,7 +9,8 @@
 #include <ir_Daikin.h>
 #include <IRutils.h>
 #include <IRac.h>
-
+#include <esp_sleep.h>
+#include <esp_wifi.h>
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
@@ -97,11 +98,18 @@ void onRecvCommandSink(uint8_t decodeSignalTemp, uint8_t decodeSignalHumd);
 void changeDisplayMode(uint8_t currentMode);
 void changeDisplayTemp(uint8_t currentTemp);
 void updateDisplay(uint16_t currentTemp, uint8_t currentMode);
+void IRAM_ATTR isr();
 
 void setup() {
   // put your setup code here, to run once:
   //Initialize Serial Monitor
   Serial.begin(115200);
+
+  ac.setPowerToggle(togglePower);
+  pinMode(IR_RECV_PIN, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(IR_RECV_PIN), isr, FALLING);
+  esp_sleep_enable_ext0_wakeup((gpio_num_t)IR_RECV_PIN, LOW);
+  remote.enableIRIn();  //receiving IR
 
   // Initialize OLED Display
   if (!display.begin(SSD1306_SWITCHCAPVCC)) {
@@ -119,13 +127,18 @@ void setup() {
     Serial.println("Error initializing ESP-NOW");
     return;
   }
-  ac.setPowerToggle(togglePower);
-  remote.enableIRIn();  //receiving IR
 
   // Once ESPNow is successfully Init, we will register for recv CB to
   // get recv packer info
   esp_now_register_recv_cb(OnDataRecv);
+
+
+
   ac.begin();
+  esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+  esp_wifi_start();
+  esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+  esp_light_sleep_start();
   Serial.println("======= Informasi awal remote AC ======= ");
   Serial.print("Power button: ");
   Serial.println(togglePower == 1 ? "ON" : "OFF");
@@ -143,6 +156,10 @@ void loop() {
   } else {
     inRemote();  // check if there is interference from remote AC by user
   }
+}
+
+void IRAM_ATTR isr() {
+  esp_wifi_set_ps(WIFI_PS_NONE);
 }
 
 void inRemoteMode() {
@@ -176,11 +193,11 @@ void inRemoteTemp() {
 
   if (compare != String(currentTemp)) {
     currentTemp = compare.toInt();
-    Serial.print("Ini nilai compare awal Temp: ");
-    Serial.println(compare);
-    Serial.print("Ini nilai konversi compare: ");
-    Serial.println(compare.toInt());
-    Serial.println("Masuk kondisi sini");
+    // Serial.print("Ini nilai compare awal Temp: ");
+    // Serial.println(compare);
+    // Serial.print("Ini nilai konversi compare: ");
+    // Serial.println(compare.toInt());
+    // Serial.println("Masuk kondisi sini");
   } else {
     currentTemp = currentTemp;
   }
@@ -269,12 +286,22 @@ void whatSink(bool AC_Condition) {
   }
   if (!(AC_Condition == false && WiFi.macAddress() == sinkNode2) && !(AC_Condition == true && WiFi.macAddress() == sinkNode1)) {
     if (AC_Condition == false) {
+      if (ac.getPowerToggle() == true) {
+        ac.setPowerToggle(true);
+        ac.send();
+        ac.setPowerToggle(false);
+      }
       Serial.println("==========================================================");
       Serial.println("AC 1 Mati");
       display.clearDisplay();  // OLED not showing info
       display.display();
 
     } else {
+      if (ac.getPowerToggle() == true) {
+        ac.setPowerToggle(true);
+        ac.send();
+        ac.setPowerToggle(false);
+      }
       Serial.println("==========================================================");
       Serial.println("AC 2 Mati");
       display.clearDisplay();  // OLED not showing info
@@ -297,41 +324,59 @@ void onRecvCommandSink(uint8_t decodeSignalTemp, uint8_t decodeSignalHumd) {
     case loweringTemp:
     case raisingTemp:
       {
-
-        if (msg.roomTemp > currentTemp) {
-          sendTemp = msg.roomTemp - currentTemp;
-          if (sendTemp != 0 && !(round(sendTemp > 7))) {
-            sendTemp = currentTemp - sendTemp;
-            ac.setTemp(sendTemp);
-            Serial.println("Lowering AC temp");
-            Serial.println(sendTemp);
+        Serial.print("Room Temperature: ");
+        Serial.println(msg.roomTemp);
+        if (msg.roomTemp < 18 || (msg.roomTemp >= 25 && msg.roomTemp < 27)) {
+          if (msg.roomTemp > currentTemp) {
+            sendTemp = msg.roomTemp - currentTemp;
+            if (sendTemp != 0 && !(round(sendTemp > 7))) {
+              sendTemp = currentTemp - sendTemp;
+              if (sendTemp <= 16 || sendTemp >= 25) {
+                sendTemp = 16;
+              }
+              ac.setTemp(sendTemp);
+              Serial.println("Lowering AC temp");
+              Serial.println(sendTemp);
+            } else if (sendTemp == 0) {
+              Serial.println("Room Temperature & AC Temperature are the same");
+            } else {
+              sendTemp = 16;
+              Serial.println("AC is broken!");
+            }
           } else {
-            Serial.println("AC is broken!");
+            sendTemp = currentTemp - msg.roomTemp;
+            if (sendTemp != 0 && !(round(sendTemp > 7))) {
+              sendTemp = currentTemp + abs(sendTemp);
+              if (sendTemp >= 30) {
+                sendTemp = 30;
+              }
+              ac.setTemp(sendTemp);
+              Serial.println("Raising AC temp");
+              Serial.println(sendTemp);
+            } else if (sendTemp == 0) {
+              Serial.println("Room Temperature & AC Temperature are the same");
+            } else {
+              sendTemp = 30;
+              Serial.println("AC is broken!");
+            }
           }
-        } else {
-          sendTemp = currentTemp - msg.roomTemp;
-          if (sendTemp != 0 && !(round(sendTemp > 7))) {
-            sendTemp = currentTemp + abs(sendTemp);
-            ac.setTemp(sendTemp);
-            Serial.println("Raising AC temp");
-            Serial.println(sendTemp);
-          } else {
-            Serial.println("AC is broken!");
-          }
+          currentTemp = sendTemp;
+          ac.send();
+          // Serial.println(ac.toString());
         }
-        currentTemp = sendTemp;
-        ac.send();
-        Serial.println(ac.toString());
         break;
       }
     default:
-      // Send command to call security with WA/telegram API
+      // Send command to call security with via IP-PBX for next feature
       Serial.println("Server room in danger!");
       currentTemp = 20;
       ac.setTemp(currentTemp);
+      ac.setMode(kDaikin64Cool);
       ac.send();
       changeDisplayTemp(currentTemp);
+      changeDisplayMode(kDaikin64Cool);
       Serial.println("Ac temp set to default: 20°C");
+      Serial.println("Ac mode set to default: Cool");
       // Serial.println(ac.toString());
       break;
   }
@@ -350,7 +395,7 @@ void onRecvCommandSink(uint8_t decodeSignalTemp, uint8_t decodeSignalHumd) {
         currentMode = ac.getMode();
         changeDisplayMode(currentMode);
         Serial.println("Switching to cool mode");
-        Serial.println(ac.toString());
+        // Serial.println(ac.toString());
         break;
       }
     case modeDry:
@@ -360,7 +405,7 @@ void onRecvCommandSink(uint8_t decodeSignalTemp, uint8_t decodeSignalHumd) {
         currentMode = ac.getMode();
         changeDisplayMode(currentMode);
         Serial.println("Switching to dry mode");
-        Serial.println(ac.toString());
+        // Serial.println(ac.toString());
         break;
       }
     default:
@@ -370,12 +415,15 @@ void onRecvCommandSink(uint8_t decodeSignalTemp, uint8_t decodeSignalHumd) {
         break;
       }
   }
-  currentTemp = ac.getTemp();
-  currentMode = ac.getMode();
-  Serial.print("Suhu saat ini: ");
-  Serial.println(currentTemp);
-  Serial.print("Mode saat ini: ");
-  Serial.println(currentMode);
+  currentTemp = currentTemp;
+  currentMode = currentMode;
+  // updateDisplay(currentTemp, currentMode);
+  // currentTemp = ac.getTemp();
+  // currentMode = ac.getMode();
+  // Serial.print("Suhu saat ini: ");
+  // Serial.println(currentTemp);
+  // Serial.print("Mode saat ini: ");
+  // Serial.println(currentMode);
 }
 
 void updateDisplay(uint16_t currentTemp, uint8_t currentMode) {
@@ -409,12 +457,16 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
   memcpy(&msg, incomingData, sizeof(msg));
   Serial.print("Bytes received: ");
   Serial.println(len);
-  Serial.print("signalCode1: ");
+  Serial.print("signalCode1Temp: ");
   Serial.println(msg.signalCode1Temp);
+  Serial.print("signalCode1Humd: ");
   Serial.println(msg.signalCode1Humd);
-  Serial.print("signalCode2: ");
+  Serial.print("signalCode2Temp: ");
   Serial.println(msg.signalCode2Temp);
+  Serial.print("signalCode2Humd: ");
   Serial.println(msg.signalCode2Humd);
+  Serial.print("Room Temperature: ");
+  Serial.println(msg.roomTemp);
   Serial.print("AC_Condition: ");
   Serial.println(msg.AC_Condition);
   Serial.println();
