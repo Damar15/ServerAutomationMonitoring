@@ -11,9 +11,6 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
-#define BLYNK_TEMPLATE_ID "TMPL6yl7XoKK2"
-#define BLYNK_TEMPLATE_NAME "AC Controller"
-
 #define DHT_TYPE DHT22
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
@@ -52,29 +49,28 @@ const unsigned char* epd_bitmap_allArray[2] = {
 
 String weekDays[7] = { "SUN", "MON", "TUE", "WED", "THUR", "FRI", "SAT" };
 
-const char* ssid = "Mi 10T";
-const char* password = "nantiaja";
+const char* ssid = "Zenix5";
+const char* password = "pangandaran5";
 const char* ntpserver = "pool.ntp.org";  // ntp server time sync
 const long gmtOffset_sec = 25200;        //GMT +7 hours in sec
 unsigned long myChannelNumber = 2213131;
 const char* myWriteAPIKey = "WQ5CYDDT9O93DQ43";
 // Timer variables for sending data via ThingSpeak
 unsigned long lastTime = 0;
-unsigned long timerDelay = 10000;  // send data every x sec e.g 30sec
-// * AC_Condition value based on time range
-// * True Sink Node 1 ON & Sink Node 2 OFF
-// * False Sink Node 1 OFF & Sink Node 2 ON
-// bool AC_condition;
+// unsigned long timerDelay = 900000;  // send data every x sec e.g 15 minutes
+unsigned long timerDelay = 30000;  // send data every x sec e.g 20 seconds
+uint32_t currentTime = millis();
+
 float humidity;
-uint8_t temp;
+float temp;
+
+uint8_t sinkNode1[] = { 0x40, 0x22, 0xD8, 0x3E, 0x99, 0x7C };
+uint8_t sinkNode2[] = { 0x40, 0x22, 0xD8, 0x3C, 0x60, 0x54 };
 // * signalCode refering to what command that sink node should give to AC
 // * 1 --> lower down the temp of AC
 // * 2 --> higher up the temp of AC
 // * 3 --> change mode to cool
 // * 4 --> change mode to dry
-// uint8_t signalCode;
-uint8_t sinkNode1[] = { 0x40, 0x22, 0xD8, 0x3E, 0x99, 0x7C };
-uint8_t sinkNode2[] = { 0x40, 0x22, 0xD8, 0x3C, 0x60, 0x54 };
 struct Message {
   uint8_t signalCode1Temp;
   uint8_t signalCode1Humd;
@@ -101,6 +97,8 @@ void systemInit();
 void recheckConnection();
 void OnDataSent(const uint8_t* mac_addr, esp_now_send_status_t status);
 void switchingToESPNOW();
+uint8_t changeModeCommand(float hum);
+uint8_t changeTempCommand(uint8_t temp);
 
 void setup() {
   pinMode(BUZZPIN, OUTPUT);
@@ -112,9 +110,7 @@ void setup() {
 void loop() {
   delay(1000);
 
-  Blynk.run();
-  
-  if ((millis() - lastTime) > timerDelay) {
+  if ((currentTime - lastTime) > timerDelay) {
     msg.AC_Condition = conditionAC();  // Recheck AC condition
     recheckConnection();               // connect or reconnect to WiFi
 
@@ -139,14 +135,15 @@ void loop() {
     }
 
     // sending data
+    // uint8_t randomTemp = random(16, 31);
+    // float tempNum = random(0, 3500) / 100.0;
+    // float randomHumd = tempNum + 30.00;
     msg.roomTemp = temp;
     if (msg.AC_Condition == true) {
       msg.signalCode1Temp = changeTempCommand(msg.roomTemp);
       msg.signalCode1Humd = changeModeCommand(humidity);
-      // msg.signalCode1Temp = changeTempCommand(28);
-      // msg.signalCode1Humd = changeModeCommand(39.00);
-      // msg.signalCode1Temp = changeTempCommand(17);
-      // msg.signalCode1Humd = changeModeCommand(61.00);
+      // msg.signalCode1Temp = changeTempCommand(randomTemp);
+      // msg.signalCode1Humd = changeModeCommand(randomHumd);
       msg.signalCode2Temp = offSendCommand();
       msg.signalCode2Humd = offSendCommand();
     } else {
@@ -154,30 +151,24 @@ void loop() {
       msg.signalCode1Humd = offSendCommand();
       msg.signalCode2Temp = changeTempCommand(msg.roomTemp);
       msg.signalCode2Humd = changeModeCommand(humidity);
-      // msg.signalCode2Temp = changeTempCommand(17);
-      // msg.signalCode2Humd = changeModeCommand(61.00);
-      // msg.signalCode2Temp = changeTempCommand(28);
-      // msg.signalCode2Humd = changeModeCommand(39.00);
+      // msg.signalCode2Temp = changeTempCommand(randomTemp);
+      // msg.signalCode2Humd = changeModeCommand(randomHumd);
     }
 
     switchingToESPNOW();
 
-    esp_err_t result = esp_now_send(0, (uint8_t*)&msg, sizeof(Message));
+    esp_err_t result = esp_now_send(0, (uint8_t*)&msg, sizeof(Message));  // Sending message
 
     if (result == ESP_OK) {
       Serial.println("Sent with success");
     } else {
       Serial.println("Error sending the data");
     }
-    lastTime = millis();
+    lastTime = currentTime;
   }
 }
 
-BLYNK_WRITE (V0) {
-  
-}
-
-void systemInit() {
+void systemInit() {  // Initialization system OLED, ThingSpeak, DHT22 Sensor, TimeSync
   int status = WL_IDLE_STATUS;
   Serial.begin(115200);
   WiFi.mode(WIFI_STA);
@@ -213,14 +204,14 @@ void systemInit() {
   Serial.println(WiFi.localIP());
 
 
-  timeClient.begin();  // Init NTPClient
-  timeClient.setTimeOffset(gmtOffset_sec);
+  timeClient.begin();                       // Init NTPClient
+  timeClient.setTimeOffset(gmtOffset_sec);  // Set GMT +7 Jakarta (WIB)
   oledDisplay();
   ThingSpeak.begin(client);  // Initialize ThingSpeak
   dht.begin();               // Initialize dht22 sensor
 }
 
-void switchingToESPNOW() {
+void switchingToESPNOW() {  // Disconnecting WiFi and use radio WiFi to communicate between node via ESP-NOW
   // switching to ESP-NOW
   WiFi.disconnect();
   WiFi.mode(WIFI_OFF);
@@ -249,7 +240,7 @@ void switchingToESPNOW() {
   }
 }
 
-void OnDataSent(const uint8_t* mac_addr, esp_now_send_status_t status) {
+void OnDataSent(const uint8_t* mac_addr, esp_now_send_status_t status) {  // Get to know if data is successfully sent or not to which node
   char macStr[18];
   Serial.print("Packet to: ");
   // Copies the sender mac address to a string
@@ -260,67 +251,85 @@ void OnDataSent(const uint8_t* mac_addr, esp_now_send_status_t status) {
   Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
 }
 
-uint8_t offSendCommand() {
+uint8_t offSendCommand() {  // Function to return 0 or do nothing to node
   return 0;
 }
 
-uint8_t changeModeCommand(float hum) {
+uint8_t changeModeCommand(float hum) {  // Function to give command to change Mode
   if (hum >= 40.00 && hum < 60.00) {
-    // continue nothing happen
+    // Continue nothing happen
     Serial.println("Server Room is good!");
     return 0;
   } else if (hum < 40.00) {
-    // change mode to cool
+    // Change mode to cool
     Serial.println("Changing mode to cool");
     return 3;
   } else {
-    // change mode to dry
+    // Change mode to dry
     Serial.println("Changing mode to dry");
     return 4;
   }
 }
 
-uint8_t changeTempCommand(uint8_t temp) {
-  noTone(BUZZPIN);
+uint8_t changeTempCommand(uint8_t temp) {  // Function to give command to change temp or give an alert to the system
   delay(1000);
-  if (temp >= 18 && temp < 25) {
+  if (temp >= 18 && temp < 25) {  // 25 default
+    // Continue nothing happen
     Serial.println("Server temp is good!");
+    noTone(BUZZPIN);
     return 0;
   } else if (temp < 18) {
-    // higher up the temp
+    // Raising up the temp
+    Serial.print("Current Temperature: ");
+    Serial.println(temp);
     Serial.println("Raising the temp");
+    noTone(BUZZPIN);
     return 2;
   } else if (temp >= 25 && temp < 27) {
-    // lower down the temp
+    // Lower down the temp
+    Serial.print("Current Temperature: ");
+    Serial.println(temp);
     Serial.println("Lowering the temp");
+    noTone(BUZZPIN);
     return 1;
   } else {
-    // Nyalakan buzzer
+    // Turn on the buzzer
     Serial.println("Server room in danger!");
     tone(BUZZPIN, 10, 2000);
     delay(1000);
     tone(BUZZPIN, 50, 2000);
     delay(1000);
-    noTone(BUZZPIN);
     return 5;
   }
 }
 
-bool conditionAC() {
+bool conditionAC() {  // Function to determined which node should be controling the AC
+  // * AC_Condition value based on time range
+  // * True Sink Node 1 ON & Sink Node 2 OFF
+  // * False Sink Node 1 OFF & Sink Node 2 ON
   timeClient.update();
-  int currentHour = timeClient.getHours();
-  if ((currentHour >= 0 && currentHour < 6) || (currentHour >= 12 && currentHour < 18)) {
-    // checking if sink node 1 is up? if up then continue if not then power it up
+  // int currentHour = timeClient.getHours();
+  // Testing switching operational
+  int currentMinutes = timeClient.getMinutes();
+  if (currentMinutes % 2 == 0) {
     Serial.println("Menghidupkan Sink Node 1");
     return 1;
   } else {
-    // checking process sink node 2 is up?
     Serial.println("Menghidupkan Sink Node 2");
     return 0;
   }
+  // if ((currentHour >= 0 && currentHour < 6) || (currentHour >= 12 && currentHour < 18)) {
+  //   // checking if sink node 1 is up? if up then continue if not then power it up
+  //   Serial.println("Menghidupkan Sink Node 1");
+  //   return 1;
+  // } else {
+  //   // checking process sink node 2 is up?
+  //   Serial.println("Menghidupkan Sink Node 2");
+  //   return 0;
+  // }
 }
 
-String get_wifi_status(int status) {
+String get_wifi_status(int status) {  // Get to know the current WiFi status for debugging
   switch (status) {
     case WL_IDLE_STATUS:
       return "WL_IDLE_STATUS";
@@ -339,7 +348,7 @@ String get_wifi_status(int status) {
   }
 }
 
-void recheckConnection() {
+void recheckConnection() {  // Function to make sure the WiFi connection
   if (WiFi.status() != WL_CONNECTED) {
     Serial.print(F("Attempting to connect "));
     Serial.println(ssid);
@@ -351,7 +360,7 @@ void recheckConnection() {
   }
 }
 
-void oledDisplay() {
+void oledDisplay() {  //Printing the template of the OLED display
   timeClient.update();
   String formattedTime = timeClient.getFormattedTime();
   String weekDay = weekDays[timeClient.getDay()];
