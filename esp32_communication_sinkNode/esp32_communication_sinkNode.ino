@@ -19,6 +19,8 @@
 #define OLED_DC 16
 #define OLED_CS 5
 #define OLED_RESET 17
+#define uS_TO_S_FACTOR 1000000ULL /* Conversion factor for micro seconds to seconds */
+
 
 #if DECODE_AC
 // Some A/C units have gaps in their protocols of ~40ms. e.g. Kelvinator
@@ -83,9 +85,10 @@ uint8_t currentTemp = msg.roomTemp;
 // 1 cool, 4 dry
 uint8_t currentMode = kDaikin64Dry;
 bool togglePower = true;
-bool dataReceived;
+bool dataReceived = false;
 String temporary;
 String compare;
+uint32_t wakeupInterval = 20;
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, OLED_MOSI, OLED_CLK, OLED_DC, OLED_RESET, OLED_CS);
 IRDaikin64 ac(IR_LED_PIN);
@@ -108,7 +111,6 @@ void setup() {
   ac.setPowerToggle(togglePower);
   pinMode(IR_RECV_PIN, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(IR_RECV_PIN), isr, FALLING);
-  esp_sleep_enable_ext0_wakeup((gpio_num_t)IR_RECV_PIN, LOW);
   remote.enableIRIn();  //receiving IR
 
   // Initialize OLED Display
@@ -127,26 +129,11 @@ void setup() {
     Serial.println("Error initializing ESP-NOW");
     return;
   }
+  ac.begin();
 
   // Once ESPNow is successfully Init, we will register for recv CB to
   // get recv packer info
   esp_now_register_recv_cb(OnDataRecv);
-
-
-
-  ac.begin();
-  esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
-  esp_wifi_start();
-  esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
-  esp_light_sleep_start();
-  Serial.println("======= Informasi awal remote AC ======= ");
-  Serial.print("Power button: ");
-  Serial.println(togglePower == 1 ? "ON" : "OFF");
-  Serial.print("AC Temperature: ");
-  Serial.print(currentTemp);
-  Serial.println((char)247);
-  Serial.print("AC Mode: ");
-  Serial.println(currentMode == 2 ? "Cool" : "Dry");
 }
 
 void loop() {
@@ -159,7 +146,7 @@ void loop() {
 }
 
 void IRAM_ATTR isr() {
-  esp_wifi_set_ps(WIFI_PS_NONE);
+  inRemote();
 }
 
 void inRemoteMode() {
@@ -471,4 +458,21 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *incomingData, int len) {
   Serial.println(msg.AC_Condition);
   Serial.println();
   dataReceived = true;
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+  if (dataReceived == true) {  //run command whenever received information from base node
+    whatSink(msg.AC_Condition);
+    dataReceived = false;
+    Serial.println("======= Informasi awal remote AC ======= ");
+    Serial.print("Power button: ");
+    Serial.println(togglePower == 1 ? "ON" : "OFF");
+    Serial.print("AC Temperature: ");
+    Serial.print(currentTemp);
+    Serial.println((char)247);
+    Serial.print("AC Mode: ");
+    Serial.println(currentMode == 2 ? "Cool" : "Dry");
+    // Entering deep sleep
+    esp_sleep_enable_timer_wakeup(wakeupInterval * uS_TO_S_FACTOR);
+    esp_sleep_enable_ext0_wakeup((gpio_num_t)IR_RECV_PIN, LOW);
+    esp_deep_sleep_start();
+  }
 }
