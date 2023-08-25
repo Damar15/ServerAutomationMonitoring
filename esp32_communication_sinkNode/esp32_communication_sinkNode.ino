@@ -9,7 +9,6 @@
 #include <ir_Daikin.h>
 #include <IRutils.h>
 #include <IRac.h>
-#include <esp_sleep.h>
 #include <esp_wifi.h>
 
 #define SCREEN_WIDTH 128
@@ -55,7 +54,7 @@ const unsigned char *epd_bitmap_allArray[2] = {
   coolMode, dryMode
 };
 
-String sinkNode1 = "40:22:D8:3E:99:7C";
+String sinkNode1 = "08:B6:1F:3D:23:AC";
 String sinkNode2 = "40:22:D8:3C:60:54";
 
 struct Message {
@@ -98,7 +97,6 @@ void onRecvCommandSink(uint8_t decodeSignalTemp, uint8_t decodeSignalHumd);
 void changeDisplayMode(uint8_t currentMode);
 void changeDisplayTemp(uint8_t currentTemp);
 void updateDisplay(uint16_t currentTemp, uint8_t currentMode);
-void IRAM_ATTR isr();
 
 void setup() {
   // put your setup code here, to run once:
@@ -106,9 +104,6 @@ void setup() {
   Serial.begin(115200);
 
   ac.setPowerToggle(togglePower);
-  pinMode(IR_RECV_PIN, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(IR_RECV_PIN), isr, FALLING);
-  esp_sleep_enable_ext0_wakeup((gpio_num_t)IR_RECV_PIN, LOW);
   remote.enableIRIn();  //receiving IR
 
   // Initialize OLED Display
@@ -135,10 +130,6 @@ void setup() {
 
 
   ac.begin();
-  esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
-  esp_wifi_start();
-  esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
-  esp_light_sleep_start();
   Serial.println("======= Informasi awal remote AC ======= ");
   Serial.print("Power button: ");
   Serial.println(togglePower == 1 ? "ON" : "OFF");
@@ -156,10 +147,6 @@ void loop() {
   } else {
     inRemote();  // check if there is interference from remote AC by user
   }
-}
-
-void IRAM_ATTR isr() {
-  esp_wifi_set_ps(WIFI_PS_NONE);
 }
 
 void inRemoteMode() {
