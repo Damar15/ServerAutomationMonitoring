@@ -57,14 +57,13 @@ unsigned long myChannelNumber = 2213131;
 const char* myWriteAPIKey = "WQ5CYDDT9O93DQ43";
 // Timer variables for sending data via ThingSpeak
 unsigned long lastTime = 0;
-// unsigned long timerDelay = 900000;  // send data every x sec e.g 15 minutes
-unsigned long timerDelay = 30000;  // send data every x sec e.g 20 seconds
-uint32_t currentTime = millis();
+unsigned long timerDelay = 900000;  // send data every x sec e.g 15 minutes
+// unsigned long timerDelay = 20000;  // send data every x sec e.g 20 seconds
 
 float humidity;
 float temp;
 
-uint8_t sinkNode1[] = { 0x40, 0x22, 0xD8, 0x3E, 0x99, 0x7C };
+uint8_t sinkNode1[] = { 0x08, 0xB6, 0x1F, 0x3D, 0x23, 0xAC };
 uint8_t sinkNode2[] = { 0x40, 0x22, 0xD8, 0x3C, 0x60, 0x54 };
 // * signalCode refering to what command that sink node should give to AC
 // * 1 --> lower down the temp of AC
@@ -110,7 +109,7 @@ void setup() {
 void loop() {
   delay(1000);
 
-  if ((currentTime - lastTime) > timerDelay) {
+  if ((millis() - lastTime) > timerDelay) {
     msg.AC_Condition = conditionAC();  // Recheck AC condition
     recheckConnection();               // connect or reconnect to WiFi
 
@@ -138,6 +137,7 @@ void loop() {
     // uint8_t randomTemp = random(16, 31);
     // float tempNum = random(0, 3500) / 100.0;
     // float randomHumd = tempNum + 30.00;
+    // msg.roomTemp = randomTemp;
     msg.roomTemp = temp;
     if (msg.AC_Condition == true) {
       msg.signalCode1Temp = changeTempCommand(msg.roomTemp);
@@ -164,7 +164,7 @@ void loop() {
     } else {
       Serial.println("Error sending the data");
     }
-    lastTime = currentTime;
+    lastTime = millis();
   }
 }
 
