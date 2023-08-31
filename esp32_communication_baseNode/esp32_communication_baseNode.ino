@@ -55,13 +55,14 @@ const char* ntpserver = "pool.ntp.org";  // ntp server time sync
 const long gmtOffset_sec = 25200;        //GMT +7 hours in sec
 unsigned long myChannelNumber = 2213131;
 const char* myWriteAPIKey = "WQ5CYDDT9O93DQ43";
+
 // Timer variables for sending data via ThingSpeak
 unsigned long lastTime = 0;
 unsigned long timerDelay = 900000;  // send data every x sec e.g 15 minutes
-// unsigned long timerDelay = 20000;  // send data every x sec e.g 20 seconds
+int currentHour; // for storing data from NTP server
 
-float humidity;
-float temp;
+float humidity; // store humdity sensor
+float temp; // store temp sensor
 
 uint8_t sinkNode1[] = { 0x08, 0xB6, 0x1F, 0x3D, 0x23, 0xAC };
 uint8_t sinkNode2[] = { 0x40, 0x22, 0xD8, 0x3C, 0x60, 0x54 };
@@ -108,18 +109,19 @@ void setup() {
 
 void loop() {
   delay(1000);
+  humidity = dht.readHumidity();
+  temp = dht.readTemperature();
+
+  if (isnan(humidity) || isnan(temp)) {
+    Serial.println(F("Failed to read from DHT sensor!"));
+    return;
+  }
+  oledDisplay();
+
 
   if ((millis() - lastTime) > timerDelay) {
     msg.AC_Condition = conditionAC();  // Recheck AC condition
     recheckConnection();               // connect or reconnect to WiFi
-
-    humidity = dht.readHumidity();
-    temp = dht.readTemperature();
-
-    if (isnan(humidity) || isnan(temp)) {
-      Serial.println(F("Failed to read from DHT sensor!"));
-      return;
-    }
 
     oledDisplay();
 
@@ -134,16 +136,10 @@ void loop() {
     }
 
     // sending data
-    // uint8_t randomTemp = random(16, 31);
-    // float tempNum = random(0, 3500) / 100.0;
-    // float randomHumd = tempNum + 30.00;
-    // msg.roomTemp = randomTemp;
     msg.roomTemp = temp;
     if (msg.AC_Condition == true) {
       msg.signalCode1Temp = changeTempCommand(msg.roomTemp);
       msg.signalCode1Humd = changeModeCommand(humidity);
-      // msg.signalCode1Temp = changeTempCommand(randomTemp);
-      // msg.signalCode1Humd = changeModeCommand(randomHumd);
       msg.signalCode2Temp = offSendCommand();
       msg.signalCode2Humd = offSendCommand();
     } else {
@@ -151,8 +147,6 @@ void loop() {
       msg.signalCode1Humd = offSendCommand();
       msg.signalCode2Temp = changeTempCommand(msg.roomTemp);
       msg.signalCode2Humd = changeModeCommand(humidity);
-      // msg.signalCode2Temp = changeTempCommand(randomTemp);
-      // msg.signalCode2Humd = changeModeCommand(randomHumd);
     }
 
     switchingToESPNOW();
@@ -295,10 +289,9 @@ uint8_t changeTempCommand(uint8_t temp) {  // Function to give command to change
   } else {
     // Turn on the buzzer
     Serial.println("Server room in danger!");
-    tone(BUZZPIN, 10, 2000);
-    delay(1000);
-    tone(BUZZPIN, 50, 2000);
-    delay(1000);
+    tone(BUZZPIN, 50);
+    delay(2000);
+    tone(BUZZPIN, 10);
     return 5;
   }
 }
@@ -308,25 +301,18 @@ bool conditionAC() {  // Function to determined which node should be controling 
   // * True Sink Node 1 ON & Sink Node 2 OFF
   // * False Sink Node 1 OFF & Sink Node 2 ON
   timeClient.update();
-  // int currentHour = timeClient.getHours();
-  // Testing switching operational
-  int currentMinutes = timeClient.getMinutes();
-  if (currentMinutes % 2 == 0) {
+  currentHour = timeClient.getHours();
+
+
+  if ((currentHour >= 0 && currentHour <= 5) || (currentHour >= 12 && currentHour <= 17)) {
+    // checking if sink node 1 is up? if up then continue if not then power it up
     Serial.println("Menghidupkan Sink Node 1");
     return 1;
   } else {
+    // checking process sink node 2 is up?
     Serial.println("Menghidupkan Sink Node 2");
     return 0;
   }
-  // if ((currentHour >= 0 && currentHour < 6) || (currentHour >= 12 && currentHour < 18)) {
-  //   // checking if sink node 1 is up? if up then continue if not then power it up
-  //   Serial.println("Menghidupkan Sink Node 1");
-  //   return 1;
-  // } else {
-  //   // checking process sink node 2 is up?
-  //   Serial.println("Menghidupkan Sink Node 2");
-  //   return 0;
-  // }
 }
 
 String get_wifi_status(int status) {  // Get to know the current WiFi status for debugging
