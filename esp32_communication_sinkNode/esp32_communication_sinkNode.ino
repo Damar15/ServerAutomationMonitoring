@@ -152,12 +152,8 @@ void loop() {
 void inRemoteMode() {
   if (compare == "On") {
     compare = temporary.substring(24, 25);
-    // Serial.print("Ini nilai compare awal mode: ");
-    // Serial.println(compare);
   } else {
     compare = temporary.substring(25, 26);
-    // Serial.print("Ini nilai compare awal mode: ");
-    // Serial.println(compare);
   }
   if (compare.toInt() == 2) {
     currentMode = kDaikin64Cool;
@@ -180,11 +176,6 @@ void inRemoteTemp() {
 
   if (compare != String(currentTemp)) {
     currentTemp = compare.toInt();
-    // Serial.print("Ini nilai compare awal Temp: ");
-    // Serial.println(compare);
-    // Serial.print("Ini nilai konversi compare: ");
-    // Serial.println(compare.toInt());
-    // Serial.println("Masuk kondisi sini");
   } else {
     currentTemp = currentTemp;
   }
@@ -192,19 +183,15 @@ void inRemoteTemp() {
 
 void inRemote() {
   if (remote.decode(&result)) {
-    // Serial.println(result.value, HEX);
     delay(1000);
 
     String outCode = resultToHumanReadableBasic(&result);
-    Serial.println(outCode.substring(12, 20));
 
     if (outCode.substring(12, 20) == "DAIKIN64") {
       IRDaikin64 acCommand(result.value);
       temporary = IRAcUtils::resultAcToString(&result);
       // *** Debug for knowing on / off AC ***
       compare = temporary.substring(14, 16);
-      Serial.print("Ini nilai compare awal toggle: ");
-      Serial.println(compare);
       if (compare == "On") {
         togglePower = !togglePower;
         display.clearDisplay();  // OLED not showing info
@@ -372,7 +359,6 @@ void onRecvCommandSink(uint8_t decodeSignalTemp, uint8_t decodeSignalHumd) {
           }
           currentTemp = sendTemp;
           ac.send();
-          // Serial.println(ac.toString());
         }
         break;
       }
@@ -387,7 +373,6 @@ void onRecvCommandSink(uint8_t decodeSignalTemp, uint8_t decodeSignalHumd) {
       changeDisplayMode(kDaikin64Cool);
       Serial.println("Ac temp set to default: 16°C");
       Serial.println("Ac mode set to default: Cool");
-      // Serial.println(ac.toString());
       break;
   }
 
@@ -405,7 +390,6 @@ void onRecvCommandSink(uint8_t decodeSignalTemp, uint8_t decodeSignalHumd) {
         currentMode = ac.getMode();
         changeDisplayMode(currentMode);
         Serial.println("Switching to cool mode");
-        // Serial.println(ac.toString());
         break;
       }
     case modeDry:
@@ -415,7 +399,6 @@ void onRecvCommandSink(uint8_t decodeSignalTemp, uint8_t decodeSignalHumd) {
         currentMode = ac.getMode();
         changeDisplayMode(currentMode);
         Serial.println("Switching to dry mode");
-        // Serial.println(ac.toString());
         break;
       }
     default:
@@ -427,13 +410,6 @@ void onRecvCommandSink(uint8_t decodeSignalTemp, uint8_t decodeSignalHumd) {
   }
   currentTemp = currentTemp;
   currentMode = currentMode;
-  // updateDisplay(currentTemp, currentMode);
-  // currentTemp = ac.getTemp();
-  // currentMode = ac.getMode();
-  // Serial.print("Suhu saat ini: ");
-  // Serial.println(currentTemp);
-  // Serial.print("Mode saat ini: ");
-  // Serial.println(currentMode);
 }
 
 void updateDisplay(uint16_t currentTemp, uint8_t currentMode) {
