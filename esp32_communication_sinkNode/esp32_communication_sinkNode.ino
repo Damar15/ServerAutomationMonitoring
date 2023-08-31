@@ -64,7 +64,7 @@ struct Message {
   uint8_t signalCode2Humd;
   bool AC_Condition;
   uint8_t roomTemp;
-} msg{ 0, 0, 0, 0, false, 19 };
+} msg{ 0, 0, 0, 0, false, 16 };
 
 enum signalStatus {
   roomOK = 0,
@@ -234,6 +234,7 @@ void whatSink(bool AC_Condition) {
   Serial.println("");
   if (AC_Condition == true && WiFi.macAddress() == sinkNode1) {  // Mengatur AC pada sink node 1
     if (ac.getPowerToggle() == true) {
+      togglePower = ac.getPowerToggle();  //menyala
       ac.setPowerToggle(false);
       onRecvCommandSink(msg.signalCode1Temp, msg.signalCode1Humd);
       Serial.println("Mengontrol AC 1");
@@ -241,6 +242,7 @@ void whatSink(bool AC_Condition) {
     } else {
       ac.setPowerToggle(true);
       ac.send();
+      togglePower = ac.getPowerToggle();  //menyala
       Serial.println("Menyalakan AC 1");
       ac.setPowerToggle(false);
       onRecvCommandSink(msg.signalCode1Temp, msg.signalCode1Humd);
@@ -251,9 +253,13 @@ void whatSink(bool AC_Condition) {
     Serial.println("Hasil pemberian perintah: ");
     Serial.println(ac.toString());
     Serial.println("==========================================");
+    Serial.print("Updated togglePower: ");
+    Serial.println(togglePower);
+    Serial.println("==========================================");
   }
   if (AC_Condition == false && WiFi.macAddress() == sinkNode2) {  // Mengatur AC pada sink node 2
     if (ac.getPowerToggle() == true) {
+      togglePower = ac.getPowerToggle();  //menyala
       ac.setPowerToggle(false);
       onRecvCommandSink(msg.signalCode2Temp, msg.signalCode2Humd);
       Serial.println("Mengontrol AC 2");
@@ -261,40 +267,57 @@ void whatSink(bool AC_Condition) {
     } else {
       ac.setPowerToggle(true);
       ac.send();
+      togglePower = ac.getPowerToggle();  //menyala
       Serial.println("Menyalakan AC 2");
       ac.setPowerToggle(false);
       onRecvCommandSink(msg.signalCode2Temp, msg.signalCode2Humd);
       Serial.println("Mengontrol AC 2");
+      ac.setPowerToggle(true);
     }
     updateDisplay(currentTemp, currentMode);
     Serial.println("Hasil pemberian perintah: ");
     Serial.println(ac.toString());
     Serial.println("==========================================");
+    Serial.print("Updated togglePower: ");
+    Serial.println(togglePower);
+    Serial.println("==========================================");
   }
-  if (!(AC_Condition == false && WiFi.macAddress() == sinkNode2) && !(AC_Condition == true && WiFi.macAddress() == sinkNode1)) {
+  if (!(AC_Condition == false && WiFi.macAddress() == sinkNode2) && !(AC_Condition == true && WiFi.macAddress() == sinkNode1)) {  //check MAC address sink node 1 & 2
     if (AC_Condition == false) {
-      if (ac.getPowerToggle() == true) {
+      if (togglePower == 1) {
         ac.setPowerToggle(true);
         ac.send();
         ac.setPowerToggle(false);
+        Serial.println("==========================================================");
+        Serial.println("AC 1 Mati");
+        display.clearDisplay();  // OLED not showing info
+        display.display();
+        togglePower = !togglePower;
+      } else {
+        Serial.println("==========================================================");
+        Serial.println("AC 1 tidak menyala");
+        togglePower = false;
       }
-      Serial.println("==========================================================");
-      Serial.println("AC 1 Mati");
-      display.clearDisplay();  // OLED not showing info
-      display.display();
-
     } else {
-      if (ac.getPowerToggle() == true) {
+      if (togglePower == 1) {
         ac.setPowerToggle(true);
         ac.send();
         ac.setPowerToggle(false);
+        Serial.println("==========================================================");
+        Serial.println("AC 2 Mati");
+        display.clearDisplay();  // OLED not showing info
+        display.display();
+        togglePower = !togglePower;
+      } else {
+        Serial.println("==========================================================");
+        Serial.println("AC 2 tidak menyala");
+        togglePower = false;
       }
-      Serial.println("==========================================================");
-      Serial.println("AC 2 Mati");
-      display.clearDisplay();  // OLED not showing info
-      display.display();
     }
   }
+  Serial.println("==========================================================");
+  Serial.print("Nilai togglePower: ");
+  Serial.println(togglePower);
 }
 
 void onRecvCommandSink(uint8_t decodeSignalTemp, uint8_t decodeSignalHumd) {
@@ -356,13 +379,13 @@ void onRecvCommandSink(uint8_t decodeSignalTemp, uint8_t decodeSignalHumd) {
     default:
       // Send command to call security with via IP-PBX for next feature
       Serial.println("Server room in danger!");
-      currentTemp = 20;
+      currentTemp = 16;
       ac.setTemp(currentTemp);
       ac.setMode(kDaikin64Cool);
       ac.send();
       changeDisplayTemp(currentTemp);
       changeDisplayMode(kDaikin64Cool);
-      Serial.println("Ac temp set to default: 20°C");
+      Serial.println("Ac temp set to default: 16°C");
       Serial.println("Ac mode set to default: Cool");
       // Serial.println(ac.toString());
       break;
