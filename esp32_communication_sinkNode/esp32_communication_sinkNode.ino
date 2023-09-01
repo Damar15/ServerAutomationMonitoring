@@ -133,6 +133,8 @@ void setup() {
   Serial.println("======= Informasi awal remote AC ======= ");
   Serial.print("Power button: ");
   Serial.println(togglePower == 1 ? "ON" : "OFF");
+  Serial.print("Nilai awal ac.getPowerToggle(): ");
+  Serial.println(ac.getPowerToggle());
   Serial.print("AC Temperature: ");
   Serial.print(currentTemp);
   Serial.println((char)247);
@@ -220,8 +222,8 @@ void whatSink(bool AC_Condition) {
   Serial.println(ac.toString());
   Serial.println("");
   if (AC_Condition == true && WiFi.macAddress() == sinkNode1) {  // Mengatur AC pada sink node 1
-    if (ac.getPowerToggle() == true) {
-      togglePower = ac.getPowerToggle();  //menyala
+    if (togglePower == true) {
+      togglePower = true;  //menyala
       ac.setPowerToggle(false);
       onRecvCommandSink(msg.signalCode1Temp, msg.signalCode1Humd);
       Serial.println("Mengontrol AC 1");
@@ -229,7 +231,7 @@ void whatSink(bool AC_Condition) {
     } else {
       ac.setPowerToggle(true);
       ac.send();
-      togglePower = ac.getPowerToggle();  //menyala
+      togglePower = true;  //menyala
       Serial.println("Menyalakan AC 1");
       ac.setPowerToggle(false);
       onRecvCommandSink(msg.signalCode1Temp, msg.signalCode1Humd);
@@ -243,10 +245,13 @@ void whatSink(bool AC_Condition) {
     Serial.print("Updated togglePower: ");
     Serial.println(togglePower);
     Serial.println("==========================================");
+    Serial.print("Nilai ac.getPowerToggle updated: ");
+    Serial.println(ac.getPowerToggle());
+    Serial.println("==========================================");
   }
   if (AC_Condition == false && WiFi.macAddress() == sinkNode2) {  // Mengatur AC pada sink node 2
-    if (ac.getPowerToggle() == true) {
-      togglePower = ac.getPowerToggle();  //menyala
+    if (togglePower == true) {
+      togglePower = true;  //menyala
       ac.setPowerToggle(false);
       onRecvCommandSink(msg.signalCode2Temp, msg.signalCode2Humd);
       Serial.println("Mengontrol AC 2");
@@ -254,7 +259,7 @@ void whatSink(bool AC_Condition) {
     } else {
       ac.setPowerToggle(true);
       ac.send();
-      togglePower = ac.getPowerToggle();  //menyala
+      togglePower = true;  //menyala
       Serial.println("Menyalakan AC 2");
       ac.setPowerToggle(false);
       onRecvCommandSink(msg.signalCode2Temp, msg.signalCode2Humd);
