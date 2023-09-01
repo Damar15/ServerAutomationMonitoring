@@ -58,11 +58,13 @@ const char* myWriteAPIKey = "WQ5CYDDT9O93DQ43";
 
 // Timer variables for sending data via ThingSpeak
 unsigned long lastTime = 0;
-unsigned long timerDelay = 900000;  // send data every x sec e.g 15 minutes
-int currentHour; // for storing data from NTP server
+// unsigned long timerDelay = 900000;  // send data every x sec e.g 15 minutes
+unsigned long timerDelay = 60000;  // send data every x sec e.g 1 minutes
+int currentHour = 0;               // for storing data from NTP server
+int currentMinutes;
 
-float humidity; // store humdity sensor
-float temp; // store temp sensor
+float humidity;  // store humdity sensor
+float temp;      // store temp sensor
 
 uint8_t sinkNode1[] = { 0x08, 0xB6, 0x1F, 0x3D, 0x23, 0xAC };
 uint8_t sinkNode2[] = { 0x40, 0x22, 0xD8, 0x3C, 0x60, 0x54 };
@@ -301,18 +303,37 @@ bool conditionAC() {  // Function to determined which node should be controling 
   // * True Sink Node 1 ON & Sink Node 2 OFF
   // * False Sink Node 1 OFF & Sink Node 2 ON
   timeClient.update();
-  currentHour = timeClient.getHours();
-
-
+  // currentHour = timeClient.getHours();
+  currentHour = currentHour;
+  // currentHour = 20;
+  if (currentHour == 24) {
+    currentHour = 0;
+  }
+  Serial.print("Simulasi jam: ");
+  Serial.println(currentHour);
   if ((currentHour >= 0 && currentHour <= 5) || (currentHour >= 12 && currentHour <= 17)) {
     // checking if sink node 1 is up? if up then continue if not then power it up
     Serial.println("Menghidupkan Sink Node 1");
+    currentHour += 1;
     return 1;
   } else {
     // checking process sink node 2 is up?
     Serial.println("Menghidupkan Sink Node 2");
+    currentHour += 1;
     return 0;
   }
+
+  // currentMinutes = timeClient.getMinutes();
+  // currentMinutes = 43;
+
+
+  //   if ((currentMinutes > 0 && currentMinutes <= 15) || (currentMinutes >= 30 && currentMinutes < 45)) {
+  //   Serial.println("Menghidupkan Sink Node 1");
+  //   return 1;
+  // } else {
+  //   Serial.println("Menghidupkan Sink Node 2");
+  //   return 0;
+  // }
 }
 
 String get_wifi_status(int status) {  // Get to know the current WiFi status for debugging
