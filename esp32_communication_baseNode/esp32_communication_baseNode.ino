@@ -53,8 +53,8 @@ const char* ssid = "Zenix5";
 const char* password = "pangandaran5";
 const char* ntpserver = "pool.ntp.org";  // ntp server time sync
 const long gmtOffset_sec = 25200;        //GMT +7 hours in sec
-unsigned long myChannelNumber = 2213131;
-const char* myWriteAPIKey = "WQ5CYDDT9O93DQ43";
+unsigned long myChannelNumber = 2259165;
+const char* myWriteAPIKey = "F41XM1LOR6HTPAUD";
 
 // Timer variables for sending data via ThingSpeak
 unsigned long lastTime = 0;
